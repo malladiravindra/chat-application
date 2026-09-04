@@ -37,7 +37,7 @@
                             <div class="message-content">{{ message.content }}</div>
                         </div>
                         <div class="message-meta">
-                            {{ message.timestamp|date:"H:i" }} {{ message.sender.username }}
+                            {{ message.timestamp|date:"H:i" }} {{ message.sender.phone_number }}
                         </div>
                     </div>
                 {% empty %}

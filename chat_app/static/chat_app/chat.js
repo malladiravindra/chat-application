@@ -10,9 +10,9 @@ scrollToBottom();
 
 // Establish Global WebSocket Connection
 const wsScheme = window.location.protocol === "https:" ? "wss" : "ws";
-const chatSocket = new WebSocket(
-    wsScheme + '://' + window.location.host + '/ws/chat/'
-);
+const token = localStorage.getItem('access_token') || '';
+const wsUrl = wsScheme + '://' + window.location.host + '/ws/chat/' + (token ? '?token=' + token : '');
+const chatSocket = new WebSocket(wsUrl);
 
 chatSocket.onmessage = function(e) {
     const data = jsonParseSafe(e.data);

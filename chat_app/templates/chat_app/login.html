@@ -1,49 +1,367 @@
-{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Chat</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{% static 'chat_app/login.css' %}">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login — Chat App</title>
+  <meta name="description" content="Sign in to Chat App with your phone number and password." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #070b14;
+      --surface:    rgba(255,255,255,0.04);
+      --border:     rgba(255,255,255,0.09);
+      --accent:     #6366f1;
+      --accent-2:   #8b5cf6;
+      --accent-glow:rgba(99,102,241,0.35);
+      --text:       #f1f5f9;
+      --muted:      #94a3b8;
+      --error:      #f87171;
+      --success:    #34d399;
+      --radius:     14px;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    /* Animated background blobs */
+    .bg-blob {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(90px);
+      opacity: 0.18;
+      animation: drift 12s ease-in-out infinite alternate;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .bg-blob.b1 { width: 520px; height: 520px; background: #6366f1; top: -120px; left: -120px; animation-delay: 0s; }
+    .bg-blob.b2 { width: 400px; height: 400px; background: #8b5cf6; bottom: -100px; right: -80px; animation-delay: -5s; }
+    .bg-blob.b3 { width: 260px; height: 260px; background: #06b6d4; top: 45%; left: 55%; animation-delay: -9s; }
+
+    @keyframes drift {
+      from { transform: translate(0,0) scale(1); }
+      to   { transform: translate(30px, 20px) scale(1.06); }
+    }
+
+    /* Card */
+    .card {
+      position: relative;
+      z-index: 1;
+      background: var(--surface);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 48px 44px;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 32px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03);
+      animation: slideUp .5s cubic-bezier(.22,1,.36,1) both;
+    }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(32px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Logo */
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 36px;
+    }
+    .logo-icon {
+      width: 42px; height: 42px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+    .logo-text { font-size: 1.25rem; font-weight: 700; letter-spacing: -.5px; }
+
+    /* Heading */
+    h1 { font-size: 1.65rem; font-weight: 700; letter-spacing: -.5px; margin-bottom: 6px; }
+    .subtitle { color: var(--muted); font-size: .9rem; margin-bottom: 32px; }
+
+    /* Form */
+    .field { margin-bottom: 18px; }
+    label {
+      display: block;
+      font-size: .8rem;
+      font-weight: 500;
+      color: var(--muted);
+      margin-bottom: 7px;
+      letter-spacing: .3px;
+      text-transform: uppercase;
+    }
+
+    .input-wrap { position: relative; }
+    .input-wrap svg {
+      position: absolute;
+      left: 14px; top: 50%;
+      transform: translateY(-50%);
+      color: var(--muted);
+      width: 17px; height: 17px;
+      pointer-events: none;
+    }
+
+    input[type="text"], input[type="password"], input[type="tel"] {
+      width: 100%;
+      padding: 12px 14px 12px 42px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: inherit;
+      font-size: .95rem;
+      outline: none;
+      transition: border-color .2s, box-shadow .2s, background .2s;
+    }
+    input::placeholder { color: #4b5563; }
+    input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+      background: rgba(99,102,241,0.06);
+    }
+
+    /* Toggle password visibility */
+    .toggle-pw {
+      position: absolute;
+      right: 12px; top: 50%;
+      transform: translateY(-50%);
+      background: none; border: none;
+      color: var(--muted); cursor: pointer;
+      padding: 4px;
+      display: flex; align-items: center;
+      transition: color .2s;
+    }
+    .toggle-pw:hover { color: var(--text); }
+
+    /* Primary button */
+    .btn-primary {
+      width: 100%;
+      padding: 13px;
+      border: none;
+      border-radius: var(--radius);
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #fff;
+      font-family: inherit;
+      font-size: .95rem;
+      font-weight: 600;
+      cursor: pointer;
+      letter-spacing: .3px;
+      margin-top: 8px;
+      transition: opacity .2s, transform .15s, box-shadow .2s;
+      box-shadow: 0 4px 20px var(--accent-glow);
+      position: relative;
+      overflow: hidden;
+    }
+    .btn-primary::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: rgba(255,255,255,0);
+      transition: background .2s;
+    }
+    .btn-primary:hover:not(:disabled)::after { background: rgba(255,255,255,0.08); }
+    .btn-primary:active:not(:disabled) { transform: scale(.98); }
+    .btn-primary:disabled { opacity: .55; cursor: not-allowed; }
+
+    /* Loading spinner inside button */
+    .spinner {
+      display: none;
+      width: 18px; height: 18px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      margin: 0 auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Alert */
+    .alert {
+      padding: 11px 14px;
+      border-radius: 10px;
+      font-size: .875rem;
+      margin-bottom: 18px;
+      display: none;
+      animation: fadeIn .25s ease;
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+    .alert.error   { background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.25); color: var(--error); }
+    .alert.success { background: rgba(52,211,153,.1);  border: 1px solid rgba(52,211,153,.25);  color: var(--success); }
+
+    /* Links */
+    .links {
+      margin-top: 22px;
+      text-align: center;
+      font-size: .875rem;
+      color: var(--muted);
+    }
+    .links a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+      transition: color .2s;
+    }
+    .links a:hover { color: var(--accent-2); }
+    .divider { margin: 0 8px; opacity: .4; }
+  </style>
 </head>
 <body>
-    <div class="blob blob-1"></div>
-    <div class="blob blob-2"></div>
 
-    <div class="login-container">
-        <div class="glass-card">
-            <header>
-                <h1>Login chat</h1>
-                <p>Log in to access your dashboard</p>
-            </header>
+  <!-- Background blobs -->
+  <div class="bg-blob b1"></div>
+  <div class="bg-blob b2"></div>
+  <div class="bg-blob b3"></div>
 
-            {% if form.errors %}
-            <div class="error-message">
-                Invalid username or password. Please try again.
-            </div>
-            {% endif %}
-
-            <form method="POST" action="{% url 'index' %}">
-                {% csrf_token %}
-                <div class="form-group">
-                    <label for="id_username">Username</label>
-                    <input type="text" name="username" id="id_username" required autofocus>
-                </div>
-                <div class="form-group">
-                    <label for="id_password">Password</label>
-                    <input type="password" name="password" id="id_password" required>
-                </div>
-                <button type="submit" class="btn-submit">Sign In</button>
-            </form>
-
-            <footer>
-                Powered by Django Channels & Celery
-            </footer>
-        </div>
+  <div class="card">
+    <div class="logo">
+      <div class="logo-icon">💬</div>
+      <span class="logo-text">ChatApp</span>
     </div>
+
+    <h1>Welcome back</h1>
+    <p class="subtitle">Sign in with your phone number and password</p>
+
+    <div id="alert-box" class="alert" role="alert"></div>
+
+    <form id="login-form" novalidate>
+      <div class="field">
+        <label for="phone">Phone Number</label>
+        <div class="input-wrap">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" />
+          </svg>
+          <input
+            type="tel"
+            id="phone"
+            name="phone_number"
+            placeholder="+91 98765 43210"
+            autocomplete="tel"
+            required
+          />
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <div class="input-wrap">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+          </svg>
+          <input
+            type="password"
+            id="password"
+            name="password"
+            placeholder="••••••••"
+            autocomplete="current-password"
+            required
+          />
+          <button type="button" class="toggle-pw" id="toggle-pw" aria-label="Toggle password visibility">
+            <svg id="eye-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" width="18" height="18">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <button type="submit" class="btn-primary" id="login-btn">
+        <span id="btn-text">Sign In</span>
+        <div class="spinner" id="btn-spinner"></div>
+      </button>
+    </form>
+
+    <div class="links">
+      <a href="/forgot-password/" id="forgot-link">Forgot Password?</a>
+      <span class="divider">•</span>
+      <a href="/register/" id="register-link">Create Account</a>
+    </div>
+  </div>
+
+  <script>
+    const form      = document.getElementById('login-form');
+    const alertBox  = document.getElementById('alert-box');
+    const btnText   = document.getElementById('btn-text');
+    const spinner   = document.getElementById('btn-spinner');
+    const loginBtn  = document.getElementById('login-btn');
+    const togglePw  = document.getElementById('toggle-pw');
+    const pwInput   = document.getElementById('password');
+    const eyeIcon   = document.getElementById('eye-icon');
+
+    function showAlert(msg, type = 'error') {
+      alertBox.textContent = msg;
+      alertBox.className   = `alert ${type}`;
+      alertBox.style.display = 'block';
+    }
+    function hideAlert() { alertBox.style.display = 'none'; }
+
+    function setLoading(loading) {
+      loginBtn.disabled = loading;
+      btnText.style.display  = loading ? 'none' : 'inline';
+      spinner.style.display  = loading ? 'block' : 'none';
+    }
+
+    // Toggle password visibility
+    togglePw.addEventListener('click', () => {
+      const isText = pwInput.type === 'text';
+      pwInput.type = isText ? 'password' : 'text';
+      eyeIcon.innerHTML = isText
+        ? `<path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />`
+        : `<path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />`;
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideAlert();
+
+      const phone    = document.getElementById('phone').value.trim();
+      const password = pwInput.value;
+
+      if (!phone || !password) {
+        showAlert('Please enter your phone number and password.');
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const res  = await fetch('/api/auth/login/', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ phone_number: phone, password }),
+        });
+        const data = await res.json();
+
+        if (res.ok) {
+          localStorage.setItem('access_token',  data.access);
+          localStorage.setItem('refresh_token', data.refresh);
+          showAlert('Login successful! Redirecting…', 'success');
+          setTimeout(() => window.location.href = data.redirect_url || '/chat/', 800);
+        } else {
+          showAlert(data.error || 'Login failed. Please try again.');
+        }
+      } catch (err) {
+        showAlert('Network error. Please check your connection.');
+      } finally {
+        setLoading(false);
+      }
+    });
+  </script>
 </body>
 </html>
