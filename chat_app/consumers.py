@@ -1,119 +1,171 @@
 import json
+import logging
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
 from .models import Message
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 class ChatConsumer(AsyncWebsocketConsumer):
-    async def connect(self):
-        self.user = self.scope['user']
+    """
+    Real-time WebSocket consumer for chat communication.
+    Supports:
+      - Live group chat & room-based chat
+      - Real-time message exchange & database persistence
+      - Typing status indicators
+      - Online/offline presence broadcasting
+      - Ping/pong heartbeat
+    """
 
-        if not self.user.is_authenticated:
-            await self.close()
+    async def connect(self):
+        self.user = self.scope.get("user")
+
+        # Reject unauthenticated connections
+        if not self.user or not self.user.is_authenticated:
+            logger.warning("Rejecting unauthenticated WebSocket connection attempt.")
+            await self.accept()
+            await self.send(text_data=json.dumps({
+                "type": "error",
+                "message": "Authentication required. Provide a valid session or JWT token via ?token=<token>."
+            }))
+            await self.close(code=4001)
             return
 
-        self.room_group_name = 'live_chat'
+        # Determine room name from URL route kwargs, defaulting to 'live_chat'
+        self.room_name = self.scope.get("url_route", {}).get("kwargs", {}).get("room_name", "live_chat")
+        self.room_group_name = f"chat_{self.room_name}"
 
-        # Join group
+        # Join the channel layer group
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
 
-        # Update online status and notify everyone
-        await self.update_user_status(self.user, True)
+        # Update online status in database
+        await self.update_user_status(self.user.id, True)
+
+        # Confirm connection to connecting client
+        await self.send(text_data=json.dumps({
+            "type": "connection_established",
+            "message": "Connected to WebSocket chat API",
+            "user_id": self.user.id,
+            "username": self.user.phone_number,
+            "room": self.room_name
+        }))
+
+        # Broadcast online status to the room
         await self.channel_layer.group_send(
             self.room_group_name,
             {
-                'type':      'user_status',
-                'user_id':   self.user.id,
-                'username':  self.user.phone_number,
-                'is_online': True,
+                "type": "user_status",
+                "user_id": self.user.id,
+                "username": self.user.phone_number,
+                "is_online": True,
             }
         )
 
     async def disconnect(self, close_code):
-        if self.user.is_authenticated:
-            await self.update_user_status(self.user, False)
-            await self.channel_layer.group_send(
-                self.room_group_name,
-                {
-                    'type':      'user_status',
-                    'user_id':   self.user.id,
-                    'username':  self.user.phone_number,
-                    'is_online': False,
-                }
-            )
+        if hasattr(self, "user") and self.user and self.user.is_authenticated:
+            # Update user offline status in database
+            await self.update_user_status(self.user.id, False)
+
+            # Broadcast offline status to the room
+            if hasattr(self, "room_group_name"):
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {
+                        "type": "user_status",
+                        "user_id": self.user.id,
+                        "username": self.user.phone_number,
+                        "is_online": False,
+                    }
+                )
+
+        if hasattr(self, "room_group_name"):
             await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
 
     async def receive(self, text_data):
-        data = json.loads(text_data)
+        """
+        Handle incoming messages from WebSocket clients.
+        """
+        try:
+            data = json.loads(text_data)
+        except Exception:
+            logger.error("Failed to parse incoming WebSocket JSON payload.")
+            return
 
-        if data.get('type') == 'typing':
-            is_typing = data.get('is_typing', False)
+        msg_type = data.get("type") or data.get("action")
+
+        # 1. Heartbeat / Ping
+        if msg_type == "ping":
+            await self.send(text_data=json.dumps({"type": "pong"}))
+            return
+
+        # 2. Typing status event
+        if msg_type == "typing":
+            is_typing = bool(data.get("is_typing", False))
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
-                    'type':            'user_typing',
-                    'sender_id':       self.user.id,
-                    'sender_username': self.user.phone_number,
-                    'is_typing':       is_typing,
+                    "type": "user_typing",
+                    "sender_id": self.user.id,
+                    "sender_username": self.user.phone_number,
+                    "is_typing": is_typing,
                 }
             )
             return
 
-        message_content = data.get('message', '').strip()
+        # 3. Chat message
+        message_content = (data.get("message") or data.get("content") or "").strip()
         if not message_content:
             return
 
-        msg_obj = await self.save_message(self.user.id, message_content)
-        timestamp_str = msg_obj.timestamp.strftime('%H:%M')
+        receiver_id = data.get("receiver_id")
+        msg_obj = await self.save_message(self.user.id, message_content, receiver_id)
+        timestamp_str = msg_obj.timestamp.strftime("%H:%M")
 
         message_payload = {
-            'type':            'chat_message',
-            'message':         message_content,
-            'sender_id':       self.user.id,
-            'sender_username': self.user.phone_number,
-            'timestamp':       timestamp_str,
+            "type": "chat_message",
+            "id": msg_obj.id,
+            "message": message_content,
+            "content": message_content,
+            "sender_id": self.user.id,
+            "sender_username": self.user.phone_number,
+            "receiver_id": msg_obj.receiver_id,
+            "timestamp": timestamp_str,
+            "created_at": msg_obj.timestamp.isoformat(),
         }
 
         await self.channel_layer.group_send(self.room_group_name, message_payload)
 
-    async def chat_message(self, event):
-        await self.send(text_data=json.dumps({
-            'type':            'chat_message',
-            'message':         event['message'],
-            'sender_id':       event['sender_id'],
-            'sender_username': event['sender_username'],
-            'timestamp':       event['timestamp'],
-        }))
+    # ── Channel Layer Event Handlers ──
 
-    async def user_status(self, event):
-        await self.send(text_data=json.dumps({
-            'type':      'user_status',
-            'user_id':   event['user_id'],
-            'username':  event['username'],
-            'is_online': event['is_online'],
-        }))
+    async def chat_message(self, event):
+        await self.send(text_data=json.dumps(event))
 
     async def user_typing(self, event):
-        await self.send(text_data=json.dumps({
-            'type':            'user_typing',
-            'sender_id':       event['sender_id'],
-            'sender_username': event['sender_username'],
-            'is_typing':       event['is_typing'],
-        }))
+        await self.send(text_data=json.dumps(event))
+
+    async def user_status(self, event):
+        await self.send(text_data=json.dumps(event))
+
+    # ── Database Operations ──
 
     @database_sync_to_async
-    def update_user_status(self, user, is_online):
-        """
-        Update online status directly on CustomUser
-        (no separate UserProfile needed).
-        """
-        User.objects.filter(id=user.id).update(is_online=is_online)
+    def update_user_status(self, user_id, is_online):
+        try:
+            User.objects.filter(id=user_id).update(is_online=is_online)
+        except Exception as e:
+            logger.error(f"Error updating user online status: {e}")
 
     @database_sync_to_async
-    def save_message(self, sender_id, content):
+    def save_message(self, sender_id, content, receiver_id=None):
         sender = User.objects.get(id=sender_id)
-        return Message.objects.create(sender=sender, content=content)
+        receiver = None
+        if receiver_id:
+            try:
+                receiver = User.objects.get(id=receiver_id)
+            except User.DoesNotExist:
+                receiver = None
+        return Message.objects.create(sender=sender, receiver=receiver, content=content)
