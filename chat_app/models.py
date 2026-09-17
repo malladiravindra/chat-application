@@ -129,3 +129,50 @@ class OTPVerification(models.Model):
 
     def __str__(self):
         return f"{self.phone_number} [{self.purpose}] — attempts: {self.attempts}"
+
+
+# ─────────────────────────────────────────────
+#  SMS Message Model (real, off-app SMS via Twilio)
+# ─────────────────────────────────────────────
+
+class SMSMessage(models.Model):
+    """
+    A real SMS sent through Twilio to a receiver's phone number.
+    Kept separate from `Message` (in-app WebSocket chat) — this record
+    tracks delivery of a message that leaves the application entirely.
+    """
+    STATUS_QUEUED      = "QUEUED"
+    STATUS_SENDING     = "SENDING"
+    STATUS_SENT        = "SENT"
+    STATUS_DELIVERED   = "DELIVERED"
+    STATUS_FAILED      = "FAILED"
+    STATUS_UNDELIVERED = "UNDELIVERED"
+
+    STATUS_CHOICES = [
+        (STATUS_QUEUED, "Queued"),
+        (STATUS_SENDING, "Sending"),
+        (STATUS_SENT, "Sent"),
+        (STATUS_DELIVERED, "Delivered"),
+        (STATUS_FAILED, "Failed"),
+        (STATUS_UNDELIVERED, "Undelivered"),
+    ]
+
+    sender = models.ForeignKey(
+        "chat_app.CustomUser",
+        on_delete=models.CASCADE,
+        related_name="sent_sms_messages",
+    )
+    receiver_phone_number = models.CharField(max_length=20)
+    body = models.CharField(max_length=160)
+    twilio_message_sid = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_QUEUED)
+    error_code = models.CharField(max_length=20, blank=True, default="")
+    error_message = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"SMS from {self.sender.phone_number} to {self.receiver_phone_number} [{self.status}]"

@@ -52,3 +52,9 @@ def chat_dashboard_view(request):
 def chat_room_view(request, phone):
     """Redirects to the main single live group chat dashboard."""
     return redirect('chat_dashboard')
+
+
+@login_required(login_url='index')
+def sms_view(request):
+    """Renders the Send SMS page (real SMS via Twilio, separate from in-app chat)."""
+    return render(request, 'chat_app/sms.html', {'current_user': request.user})

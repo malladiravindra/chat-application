@@ -10,6 +10,7 @@ urlpatterns = [
     path('logout/',          views.logout_view,          name='logout'),
     path('chat/',            views.chat_dashboard_view,  name='chat_dashboard'),
     path('chat/<str:phone>/', views.chat_room_view,      name='chat_room'),
+    path('sms/',              views.sms_view,             name='sms'),
 
     # ── Auth API Endpoints ───────────────────────────────
     path('api/auth/register/',        api_views.RegisterView.as_view(),       name='api_register'),
@@ -18,4 +19,9 @@ urlpatterns = [
     path('api/auth/login/',           api_views.LoginView.as_view(),          name='api_login'),
     path('api/auth/forgot-password/', api_views.ForgotPasswordView.as_view(), name='api_forgot_password'),
     path('api/auth/reset-password/',  api_views.ResetPasswordView.as_view(),  name='api_reset_password'),
+
+    # ── SMS API Endpoints (real SMS via Twilio) ──────────
+    path('api/sms/send/',             api_views.SendSMSView.as_view(),               name='api_sms_send'),
+    path('api/sms/<int:pk>/',         api_views.SMSStatusView.as_view(),             name='api_sms_status'),
+    path('api/twilio/sms/status/',    api_views.TwilioSMSStatusWebhookView.as_view(), name='api_twilio_sms_status'),
 ]

@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import CustomUser, Message, OTPVerification
+from .models import CustomUser, Message, OTPVerification, SMSMessage
 
 
 @admin.register(CustomUser)
@@ -39,3 +39,11 @@ class OTPVerificationAdmin(admin.ModelAdmin):
     list_display  = ('phone_number', 'purpose', 'attempts', 'created_at')
     list_filter   = ('purpose',)
     search_fields = ('phone_number',)
+
+
+@admin.register(SMSMessage)
+class SMSMessageAdmin(admin.ModelAdmin):
+    list_display  = ('sender', 'receiver_phone_number', 'status', 'twilio_message_sid', 'created_at')
+    list_filter   = ('status', 'created_at')
+    search_fields = ('sender__phone_number', 'receiver_phone_number', 'twilio_message_sid')
+    readonly_fields = ('twilio_message_sid', 'created_at', 'updated_at')

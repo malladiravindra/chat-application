@@ -15,19 +15,25 @@ Security:
   • Passwords      : hashed via Django's default PBKDF2 hasher
 """
 
+import logging
 import os
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from rest_framework import status
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import OTPVerification
+from .models import OTPVerification, SMSMessage
+from .serializers import SendSMSRequestSerializer, SMSMessageSerializer
+from twilio_service.services import SMSSendError, send_sms
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────
@@ -548,3 +554,144 @@ class ResetPasswordView(APIView):
             {"message": "Password reset successful. You can now log in with your new password."},
             status=status.HTTP_200_OK,
         )
+
+
+# ─────────────────────────────────────────────
+#  SMS API Views (real SMS via Twilio — separate from in-app chat)
+# ─────────────────────────────────────────────
+
+class SendSMSView(APIView):
+    """
+    POST /api/sms/send/ — sends a real SMS to a phone number via Twilio.
+
+    Request body:
+        to      : string  (receiver phone number, E.164 preferred)
+        message : string  (<= 160 characters)
+
+    The Twilio sender (from-number / messaging service) always comes
+    from backend settings; the frontend cannot supply or override it.
+    Requires authentication and is rate-limited per user (see
+    REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']['sms_send']) since every
+    successful call sends a real, billable SMS.
+    """
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "sms_send"
+
+    def post(self, request):
+        serializer = SendSMSRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            first_field, first_errors = next(iter(serializer.errors.items()))
+            return Response(
+                {"success": False, "error": {"code": "VALIDATION_ERROR", "message": str(first_errors[0])}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        to_number = serializer.validated_data["to"]
+        body = serializer.validated_data["message"]
+
+        sms = SMSMessage.objects.create(
+            sender=request.user,
+            receiver_phone_number=to_number,
+            body=body,
+            status=SMSMessage.STATUS_QUEUED,
+        )
+
+        try:
+            result = send_sms(to_number, body)
+        except SMSSendError as exc:
+            sms.status = SMSMessage.STATUS_FAILED
+            sms.error_message = str(exc)[:255]
+            sms.error_code = str(exc.twilio_code or "")[:20]
+            sms.save(update_fields=["status", "error_message", "error_code", "updated_at"])
+            logger.warning("SMS send failed sms_id=%s code=%s", sms.id, sms.error_code)
+            return Response(
+                {"success": False, "error": {"code": "SMS_SEND_FAILED", "message": "Unable to send SMS."}},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        sms.twilio_message_sid = result.sid
+        if result.status in dict(SMSMessage.STATUS_CHOICES):
+            sms.status = result.status
+        sms.save(update_fields=["twilio_message_sid", "status", "updated_at"])
+
+        return Response(
+            {"success": True, "message": SMSMessageSerializer(sms).data},
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class SMSStatusView(APIView):
+    """
+    GET /api/sms/<id>/ — returns the current delivery status of an SMS
+    the requesting user sent. The database (updated by the Twilio status
+    webhook) is the source of truth; the frontend polls this to refresh
+    the displayed status after sending.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        try:
+            sms = SMSMessage.objects.get(pk=pk, sender=request.user)
+        except SMSMessage.DoesNotExist:
+            return Response({"error": "SMS message not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response({"message": SMSMessageSerializer(sms).data})
+
+
+class TwilioSMSStatusWebhookView(APIView):
+    """
+    POST /api/twilio/sms/status/ — Twilio delivery-status callback.
+
+    Configure this URL (publicly reachable over HTTPS) as the
+    status_callback for outbound messages. Twilio is not one of our
+    users, so this endpoint is unauthenticated but verifies the
+    X-Twilio-Signature header against TWILIO_AUTH_TOKEN — requests that
+    fail signature validation are rejected.
+    """
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        if not self._is_valid_twilio_signature(request):
+            logger.warning("Rejected Twilio status callback with invalid signature.")
+            return Response({"error": "Invalid signature."}, status=status.HTTP_403_FORBIDDEN)
+
+        message_sid = request.data.get("MessageSid") or request.data.get("SmsSid")
+        message_status = (request.data.get("MessageStatus") or "").strip().upper()
+        error_code = request.data.get("ErrorCode", "")
+
+        if not message_sid:
+            return Response({"error": "Missing MessageSid."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            sms = SMSMessage.objects.get(twilio_message_sid=message_sid)
+        except SMSMessage.DoesNotExist:
+            logger.info("Twilio status callback for unknown sid=%s", message_sid)
+            # Twilio only cares that we returned 2xx; nothing to update locally.
+            return Response({"message": "ignored"}, status=status.HTTP_200_OK)
+
+        update_fields = ["updated_at"]
+        if message_status in dict(SMSMessage.STATUS_CHOICES):
+            sms.status = message_status
+            update_fields.append("status")
+        if error_code:
+            sms.error_code = str(error_code)[:20]
+            update_fields.append("error_code")
+
+        sms.save(update_fields=update_fields)
+        return Response({"message": "ok"}, status=status.HTTP_200_OK)
+
+    @staticmethod
+    def _is_valid_twilio_signature(request) -> bool:
+        auth_token = settings.TWILIO_AUTH_TOKEN
+        if not auth_token:
+            return False
+
+        from twilio.request_validator import RequestValidator
+
+        validator = RequestValidator(auth_token)
+        signature = request.META.get("HTTP_X_TWILIO_SIGNATURE", "")
+        url = request.build_absolute_uri()
+        params = request.data.dict() if hasattr(request.data, "dict") else dict(request.data)
+        return validator.validate(url, params, signature)

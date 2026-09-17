@@ -21,6 +21,11 @@
                         <div class="status" id="header-status-text">Active now</div>
                     </div>
                 </div>
+                <a href="{% url 'sms' %}" class="logout-btn" title="Send SMS" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 8px; border-radius: 4px; color: #b0bec5; display: flex; align-items: center; justify-content: center; text-decoration: none; margin-right: 8px;">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                </a>
                 <a href="{% url 'logout' %}" class="logout-btn" title="Logout" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 8px; border-radius: 4px; color: #b0bec5; display: flex; align-items: center; justify-content: center; text-decoration: none;">
                     <svg width="16" height="16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
                         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>

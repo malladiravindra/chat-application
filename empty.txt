@@ -1,0 +1,128 @@
+Secrets / Sensitive Configuration Audit
+========================================
+Scope: entire chat_application Django project (settings, apps, templates,
+static JS, migrations, tests). Read-only — no code changed in this pass.
+Actual secret VALUES are intentionally omitted below; only variable names,
+locations, and status are recorded.
+
+1. SECRET_KEY
+   - Location: chat_application/settings.py
+   - Current:  SECRET_KEY = os.getenv('SECRET_KEY',)
+   - Status:   OK. Already sourced from environment, no hardcoded fallback.
+   - Real value: present only in .env (gitignored, untracked).
+
+2. DEBUG
+   - Location: chat_application/settings.py
+   - Current:  DEBUG = os.getenv('DEBUG', 'True') == 'True'
+   - Status:   Sourced from env, but the DEFAULT is 'True' when unset —
+     unsafe if a deployment forgets to set DEBUG. Should default to 'False'.
+
+3. ALLOWED_HOSTS
+   - Location: chat_application/settings.py
+   - Current:  ALLOWED_HOSTS = ['*']  (hardcoded, not env-driven)
+   - Status:   NEEDS FIX. Not a secret, but should be environment-configurable
+     per the requested hardening and should not default to '*' in production.
+
+4. Database (PostgreSQL / SQLite)
+   - Location: chat_application/settings.py
+   - Current:  DB_ENGINE, POSTGRES_DB/DB_NAME, POSTGRES_USER/DB_USER,
+     POSTGRES_PASSWORD/DB_PASSWORD, POSTGRES_HOST/DB_HOST,
+     POSTGRES_PORT/DB_PORT — all read via os.getenv(), falls back to
+     SQLite (db.sqlite3) when no DB env vars are set.
+   - Status:   OK. No hardcoded DB password anywhere. No DATABASE_URL
+     scheme is used by this project (discrete fields instead) — not adding
+     a DATABASE_URL var since it isn't read by any code (would be dead
+     config per the "don't add unused variables" instruction).
+
+5. Twilio (Verify API + SMS)
+   - Location: chat_application/settings.py, twilio_service/services.py,
+     chat_app/api_views.py
+   - Vars used by code: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN,
+     TWILIO_VERIFY_SERVICE_SID, TWILIO_PHONE_NUMBER,
+     TWILIO_MESSAGING_SERVICE_SID, TWILIO_STATUS_CALLBACK_URL
+   - Status:   OK — all already read via os.getenv('...', '') with no
+     hardcoded fallback secret. Real values live only in .env.
+   - GAP: .env currently defines SECRET_KEY, DEBUG, TWILIO_ACCOUNT_SID,
+     TWILIO_AUTH_TOKEN, TWILIO_VERIFY_SERVICE_SID only — it is MISSING
+     TWILIO_PHONE_NUMBER, TWILIO_MESSAGING_SERVICE_SID and
+     TWILIO_STATUS_CALLBACK_URL, which the SMS feature already reads from
+     settings. Adding these (blank where not yet obtained).
+   - POSSIBLE MISCONFIGURATION (not a leak, a correctness note): the value
+     currently stored under TWILIO_ACCOUNT_SID has the Twilio "SK..." prefix
+     format (API Key SID), and the value under TWILIO_VERIFY_SERVICE_SID has
+     the "AC..." prefix format (Account SID) — these two look swapped
+     relative to what Twilio expects (Account SID should start "AC",
+     Verify Service SID should start "VA"). This matches a 401
+     "authorization with Key failed" error observed earlier when testing
+     OTP send. Recommend re-checking these three values against the
+     Twilio Console (Account SID / Auth Token on the main dashboard,
+     Verify Service SID under Verify > Services).
+   - Frontend check: no Twilio credentials appear anywhere under
+     chat_app/static or chat_app/templates (confirmed via grep). The
+     sender number/service is selected server-side only
+     (twilio_service/services.py); TWILIO_AUTH_TOKEN is never accepted
+     from any request.
+
+6. JWT (rest_framework_simplejwt)
+   - Location: chat_application/settings.py (SIMPLE_JWT dict)
+   - Current:  Only ACCESS_TOKEN_LIFETIME, REFRESH_TOKEN_LIFETIME,
+     AUTH_HEADER_TYPES are set. No explicit SIGNING_KEY key is configured.
+   - Status:   OK. simplejwt's default SIGNING_KEY falls back to Django's
+     SECRET_KEY (already env-sourced) — there is no separate hardcoded JWT
+     secret to extract. Not adding an unused JWT_SIGNING_KEY env var, since
+     the project does not currently set one explicitly (would be dead
+     config per "don't add unused variables").
+
+7. Email / SMTP
+   - Searched settings.py and whole project for EMAIL_HOST, EMAIL_PORT,
+     EMAIL_HOST_USER, EMAIL_HOST_PASSWORD, EMAIL_USE_TLS/SSL.
+   - Status:   NOT PRESENT. This project sends OTPs via Twilio Verify, not
+     email — there is no SMTP/email backend configured anywhere. Not
+     adding EMAIL_* variables to .env since nothing reads them (would be
+     dead config).
+
+8. Redis / Celery
+   - Location: chat_application/settings.py (CHANNEL_LAYERS),
+     chat_application/celery.py
+   - Current:  REDIS_HOST / REDIS_PORT read via os.getenv, empty by
+     default -> falls back to InMemoryChannelLayer. celery.py only loads
+     config from Django settings (namespace='CELERY'); no
+     CELERY_BROKER_URL / CELERY_RESULT_BACKEND / Redis password is set
+     anywhere in settings.py.
+   - Status:   OK, nothing hardcoded. Not adding REDIS_URL or
+     CELERY_BROKER_URL since neither is read by any code in this project
+     (django-celery-beat/django-celery-results packages are installed but
+     no broker/backend settings exist yet — out of scope for a secrets
+     migration; flagging only).
+
+9. AWS / cloud storage / OAuth / webhook signing secrets (other than
+   Twilio's own signature validation) / encryption keys / private keys
+   - Searched whole project (*.py, *.js, *.html, migrations, tests).
+   - Status:   NOT PRESENT. No AWS_*, no OAuth client secrets, no
+     standalone encryption/signing keys, no PEM/private key blocks found
+     anywhere in the repo.
+
+10. Test fixtures
+   - Location: chat_app/tests.py, chat_app/test_sms.py
+   - Current:  password="testpassword123" / password="testpass123" used
+     to create throwaway test users inside Django TestCase setUp methods.
+   - Status:   Not a real credential — local, disposable test fixture data
+     scoped to the test database only. Left as-is (moving test fixture
+     strings into .env would add indirection with no security benefit).
+
+11. Docker / deployment files
+   - Searched for Dockerfile, docker-compose*, Procfile, *.yml/*.yaml,
+     *.cfg across the project.
+   - Status:   NONE EXIST in this project. Nothing to audit here.
+
+Summary of required follow-up changes (see next step):
+   - settings.py: make ALLOWED_HOSTS env-driven; default DEBUG to False.
+   - .env: add the missing (currently blank) Twilio keys already read by
+     the code: TWILIO_PHONE_NUMBER, TWILIO_MESSAGING_SERVICE_SID,
+     TWILIO_STATUS_CALLBACK_URL; add ALLOWED_HOSTS.
+   - .env.example: mirror the same keys with placeholders (already mostly
+     present from the earlier SMS feature work).
+   - Flag the likely swapped TWILIO_ACCOUNT_SID / TWILIO_VERIFY_SERVICE_SID
+     values to the user for manual correction (values not modified here —
+     guessing at replacements is out of scope; the user must confirm the
+     correct Console values).

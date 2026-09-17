@@ -14,9 +14,13 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Core Security
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-!_d#z3ceq@h%c(lcn$-wd=*pwmm1oe(&%=&w$=k#_s#=6+!lww')
-DEBUG = os.getenv('DEBUG', 'True') == 'True'
-ALLOWED_HOSTS = ['*']
+SECRET_KEY = os.environ['SECRET_KEY']
+DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+    if host.strip()
+]
 
 # Application definition
 INSTALLED_APPS = [
@@ -147,7 +151,11 @@ else:
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
-    )
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        # Applied per authenticated user on POST /api/sms/send/
+        'sms_send': os.getenv('SMS_SEND_THROTTLE_RATE', '10/hour'),
+    },
 }
 
 SIMPLE_JWT = {
@@ -180,5 +188,10 @@ CORS_ALLOWED_HEADERS = [
 TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID', '')
 TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN', '')
 TWILIO_PHONE_NUMBER = os.getenv('TWILIO_PHONE_NUMBER', '')
+# Optional: use a Messaging Service instead of a single TWILIO_PHONE_NUMBER.
+# When set, it takes priority over TWILIO_PHONE_NUMBER for outbound SMS.
+TWILIO_MESSAGING_SERVICE_SID = os.getenv('TWILIO_MESSAGING_SERVICE_SID', '')
 TWILIO_VERIFY_SERVICE_SID = os.getenv('TWILIO_VERIFY_SERVICE_SID', '')
+# Public HTTPS URL Twilio will POST delivery status updates to, e.g.
+# https://<your-domain-or-tunnel>/api/twilio/sms/status/
 TWILIO_STATUS_CALLBACK_URL = os.getenv('TWILIO_STATUS_CALLBACK_URL', '')
