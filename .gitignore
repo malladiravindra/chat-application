@@ -2,27 +2,24 @@
 __pycache__/
 *.py[cod]
 *$py.class
-*.pyc
 
-# Virtual environments
-.venv/
-env/
-venv/
+# Environment variables
+.env
+*.env
+!.env.example
 
-# Django
-backend/*.sqlite3
-backend/staticfiles/
-backend/.env
+# Database
+*.sqlite3
+db.sqlite3
 
-# Node / React
-frontend/node_modules/
-frontend/dist/
-frontend/.env
+# Logs
+*.log
 
-# VS Code
-.vscode/
-*.code-workspace
+# Static collected
+staticfiles/
 
-# OS
+# OS / IDE
 .DS_Store
 Thumbs.db
+.vscode/
+.idea/
